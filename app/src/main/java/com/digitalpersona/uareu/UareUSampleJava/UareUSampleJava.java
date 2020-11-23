@@ -134,6 +134,11 @@ public class UareUSampleJava extends Activity
 				launchIdentification();
 			}
 		});
+
+		((Button) findViewById(R.id.show_image)).setOnClickListener(v -> {
+			Intent i = new Intent(UareUSampleJava.this, ShowActivity.class);
+			startActivity(i);
+		});
 	}
 
 	protected void launchGetReader()

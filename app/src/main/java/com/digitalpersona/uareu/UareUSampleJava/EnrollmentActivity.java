@@ -15,7 +15,8 @@ import com.digitalpersona.uareu.Fmd.Format;
 import com.digitalpersona.uareu.Reader;
 import com.digitalpersona.uareu.Reader.Priority;
 import com.digitalpersona.uareu.UareUGlobal;
-import com.google.gson.Gson;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import android.app.Activity;
 import android.content.Intent;
@@ -23,6 +24,8 @@ import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.Bundle;
+import android.os.Environment;
+import android.util.Base64;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
@@ -30,14 +33,12 @@ import android.widget.ImageView;
 import android.widget.TextView;
 import android.content.Context;
 
-import org.json.JSONObject;
-
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.charset.Charset;
 import java.util.HashMap;
-import java.util.Map;
-import java.util.Random;
 
 public class EnrollmentActivity extends Activity {
     private Button m_back;
@@ -57,6 +58,9 @@ public class EnrollmentActivity extends Activity {
     private TextView m_text_conclusion;
     private String m_textString;
     private String m_text_conclusionString;
+    private String imageBase64;
+    private int cbe;
+    private int resolution;
     private Engine m_engine = null;
     private int m_current_fmds_count = 0;
     private boolean m_first = true;
@@ -68,24 +72,28 @@ public class EnrollmentActivity extends Activity {
 
     private void initializeActivity() {
         m_enginError = "";
-        m_title = findViewById(R.id.title);
+        m_title = (TextView) findViewById(R.id.title);
         m_title.setText("Enrollment");
-        m_selectedDevice = findViewById(R.id.selected_device);
+        m_selectedDevice = (TextView) findViewById(R.id.selected_device);
         m_deviceName = getIntent().getExtras().getString("device_name");
 
         m_selectedDevice.setText("Device: " + m_deviceName);
 
-        m_imgView = findViewById(R.id.bitmap_image);
+        m_imgView = (ImageView) findViewById(R.id.bitmap_image);
         m_bitmap = Globals.GetLastBitmap();
         if (m_bitmap == null)
             m_bitmap = BitmapFactory.decodeResource(getResources(), R.drawable.black);
         m_imgView.setImageBitmap(m_bitmap);
-        m_back = findViewById(R.id.back);
+        m_back = (Button) findViewById(R.id.back);
 
-        m_back.setOnClickListener(v -> onBackPressed());
+        m_back.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                onBackPressed();
+            }
+        });
 
-        m_text = findViewById(R.id.text);
-        m_text_conclusion = findViewById(R.id.text_conclusion);
+        m_text = (TextView) findViewById(R.id.text);
+        m_text_conclusion = (TextView) findViewById(R.id.text_conclusion);
         UpdateGUI();
     }
 
@@ -96,10 +104,10 @@ public class EnrollmentActivity extends Activity {
         m_textString = "Place any finger on the reader";
         initializeActivity();
 
-        // initialize dp sdk
+        // initiliaze dp sdk
         try {
-            Context appContext = getApplicationContext();
-            m_reader = Globals.getInstance().getReader(m_deviceName, appContext);
+            Context applContext = getApplicationContext();
+            m_reader = Globals.getInstance().getReader(m_deviceName, applContext);
             m_reader.Open(Priority.EXCLUSIVE);
             m_DPI = Globals.GetFirstDPI(m_reader);
             m_engine = UareUGlobal.GetEngine();
@@ -111,55 +119,98 @@ public class EnrollmentActivity extends Activity {
         }
 
         // loop capture on a separate thread to avoid freezing the UI
-        new Thread(() -> {
-            try {
-                m_current_fmds_count = 0;
-                m_reset = false;
-                enrollThread = new EnrollmentCallback(m_reader, m_engine);
-                while (!m_reset) {
-                    try {
-                        m_enrollment_fmd = m_engine.CreateEnrollmentFmd(Format.ANSI_378_2004, enrollThread);
-                        if (m_success = (m_enrollment_fmd != null)) {
-                            m_templateSize = m_enrollment_fmd.getData().length;
-                            m_current_fmds_count = 0;    // reset count on success
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    m_current_fmds_count = 0;
+                    m_reset = false;
+                    enrollThread = new EnrollmentCallback(m_reader, m_engine);
+                    while (!m_reset) {
+                        try {
+                            m_enrollment_fmd = m_engine.CreateEnrollmentFmd(Fmd.Format.ANSI_378_2004, enrollThread);
+                            if (m_success = (m_enrollment_fmd != null)) {
+                                m_templateSize = m_enrollment_fmd.getData().length;
+                                m_current_fmds_count = 0;    // reset count on success
 
-                            // Save FMD to database
-                            HashMap<String, Object> fmd = new HashMap<>();
-                            fmd.put("cbeffId", m_enrollment_fmd.getCbeffId());
-                            fmd.put("captureEquipmentCompliance", m_enrollment_fmd.getCaptureEquipmentCompliance());
-                            fmd.put("captureEquipmentId", m_enrollment_fmd.getCaptureEquipmentId());
-                            fmd.put("data", m_enrollment_fmd.getData());
-                            fmd.put("format", m_enrollment_fmd.getFormat());
-                            fmd.put("height", m_enrollment_fmd.getHeight());
-                            fmd.put("width", m_enrollment_fmd.getWidth());
-                            fmd.put("resolution", m_enrollment_fmd.getResolution());
-                            fmd.put("viewCnt", m_enrollment_fmd.getViewCnt());
-                            fmd.put("views", m_enrollment_fmd.getViews());
 
-                            URL url = new URL("http://0f91a376b0c0.ngrok.io/save?id=FMD-" + new Random().nextInt());
-                            HttpURLConnection con = (HttpURLConnection) url.openConnection();
-                            con.setRequestMethod("POST");
-                            con.setRequestProperty("Content-Type", "application/json; utf-8");
-                            con.setRequestProperty("Accept", "application/json; utf-8");
-                            con.setDoOutput(true);
-                            try (OutputStream os = con.getOutputStream()) {
-                                byte[] input = new Gson().toJson(m_enrollment_fmd).getBytes("utf-8");
-                                os.write(input, 0, input.length);
+                                // added ------------------
+                                String extDir = Environment.getExternalStorageDirectory().getAbsolutePath();
+                                String dir = String.format("%s/UareU/", extDir);
+                                Globals.setBase(imageBase64);
+
+                                // save data.txt
+                                String base = "finger.json";
+                                try {
+                                    File myFolder = new File(dir);
+                                    if (!myFolder.exists()) {
+                                        myFolder.mkdirs();
+                                    }
+
+                                    HashMap<String, Object> finger = new HashMap<>();
+                                    finger.put("cbe", cbe);
+                                    finger.put("res", resolution);
+                                    //  finger.put("image", imageBase64);
+                                    ObjectMapper objectMapper = new ObjectMapper();
+
+                                    String absolutePath = String.format("%s%s", dir, base);
+
+                                    String jsonOutputString;
+                                    try (FileOutputStream writer = new FileOutputStream(absolutePath)) {
+                                        jsonOutputString = objectMapper.writeValueAsString(finger);
+                                        writer.write(jsonOutputString.getBytes());
+                                    } catch (IOException e) {
+                                        e.printStackTrace();
+                                        new Utils().log("Image save failed");
+                                    }
+                                } catch (Exception e) {
+                                    e.printStackTrace();
+                                    new Utils().log("Image save failed");
+                                }
+
+                                // save finger.txt
+                                String txt = "finger.txt";
+                                String path = String.format("%s%s", dir, txt);
+                                try (FileOutputStream fos = new FileOutputStream(path)) {
+                                    fos.write(imageBase64.getBytes(Charset.defaultCharset()));
+                                    fos.flush();
+                                    fos.close();
+                                } catch (Exception e) {
+
+                                }
+
+
+                                // save finger.png
+                                String image = "finger.png";
+                                String absPath = String.format("%s%s", dir, image);
+
+                                try {
+                                    File myFolder = new File(dir);
+                                    if (!myFolder.exists()) {
+                                        myFolder.mkdirs();
+                                    }
+
+                                    FileOutputStream fos = new FileOutputStream(absPath);
+                                    m_bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos);
+                                    fos.flush();
+                                    fos.close();
+                                } catch (IOException e) {
+                                    e.printStackTrace();
+                                }
+
+                                // end added -------------------
                             }
-
-                            int code = con.getResponseCode();
-                            System.out.println(code);
+                        } catch (Exception e) {
+                            // template creation failed, reset count
+                            m_current_fmds_count = 0;
                         }
-                    } catch (Exception e) {
-                        // template creation failed, reset count
-                        m_current_fmds_count = 0;
                     }
-                }
-            } catch (Exception e) {
-                if (!m_reset) {
-                    Log.w("UareUSampleJava", "error during capture");
-                    m_deviceName = "";
-                    onBackPressed();
+                } catch (Exception e) {
+                    if (!m_reset) {
+                        Log.w("UareUSampleJava", "error during capture");
+                        m_deviceName = "";
+                        onBackPressed();
+                    }
                 }
             }
         }).start();
@@ -237,6 +288,10 @@ public class EnrollmentActivity extends Activity {
                     prefmd.view_index = 0;
                     m_current_fmds_count++;
 
+                    imageBase64 = getStringImage(m_bitmap); // added
+                    cbe = cap_result.image.getCbeffId();
+                    resolution = cap_result.image.getImageResolution();
+
                     result = prefmd;
                     break;
                 } catch (Exception e) {
@@ -275,5 +330,12 @@ public class EnrollmentActivity extends Activity {
 
             return result;
         }
+    }
+
+    public String getStringImage(Bitmap bm) {
+        ByteArrayOutputStream ba = new ByteArrayOutputStream();
+        bm.compress(Bitmap.CompressFormat.PNG, 100, ba);
+        byte[] image = ba.toByteArray();
+        return Base64.encodeToString(image, Base64.DEFAULT);
     }
 }
