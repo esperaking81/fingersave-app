@@ -15,7 +15,6 @@ import com.digitalpersona.uareu.Fmd.Format;
 import com.digitalpersona.uareu.Reader;
 import com.digitalpersona.uareu.Reader.Priority;
 import com.digitalpersona.uareu.UareUGlobal;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import android.app.Activity;
@@ -27,7 +26,6 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.util.Base64;
 import android.util.Log;
-import android.view.View;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.TextView;
@@ -37,6 +35,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.ObjectOutputStream;
 import java.nio.charset.Charset;
 import java.util.HashMap;
 
@@ -72,28 +71,24 @@ public class EnrollmentActivity extends Activity {
 
     private void initializeActivity() {
         m_enginError = "";
-        m_title = (TextView) findViewById(R.id.title);
+        m_title = findViewById(R.id.title);
         m_title.setText("Enrollment");
-        m_selectedDevice = (TextView) findViewById(R.id.selected_device);
+        m_selectedDevice = findViewById(R.id.selected_device);
         m_deviceName = getIntent().getExtras().getString("device_name");
 
         m_selectedDevice.setText("Device: " + m_deviceName);
 
-        m_imgView = (ImageView) findViewById(R.id.bitmap_image);
+        m_imgView = findViewById(R.id.bitmap_image);
         m_bitmap = Globals.GetLastBitmap();
         if (m_bitmap == null)
             m_bitmap = BitmapFactory.decodeResource(getResources(), R.drawable.black);
         m_imgView.setImageBitmap(m_bitmap);
-        m_back = (Button) findViewById(R.id.back);
+        m_back = findViewById(R.id.back);
 
-        m_back.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) {
-                onBackPressed();
-            }
-        });
+        m_back.setOnClickListener(v -> onBackPressed());
 
-        m_text = (TextView) findViewById(R.id.text);
-        m_text_conclusion = (TextView) findViewById(R.id.text_conclusion);
+        m_text = findViewById(R.id.text);
+        m_text_conclusion = findViewById(R.id.text_conclusion);
         UpdateGUI();
     }
 
@@ -128,7 +123,7 @@ public class EnrollmentActivity extends Activity {
                     enrollThread = new EnrollmentCallback(m_reader, m_engine);
                     while (!m_reset) {
                         try {
-                            m_enrollment_fmd = m_engine.CreateEnrollmentFmd(Fmd.Format.ANSI_378_2004, enrollThread);
+                            m_enrollment_fmd = m_engine.CreateEnrollmentFmd(Format.ISO_19794_2_2005, enrollThread);
                             if (m_success = (m_enrollment_fmd != null)) {
                                 m_templateSize = m_enrollment_fmd.getData().length;
                                 m_current_fmds_count = 0;    // reset count on success
@@ -150,12 +145,16 @@ public class EnrollmentActivity extends Activity {
                                     HashMap<String, Object> finger = new HashMap<>();
                                     finger.put("cbe", cbe);
                                     finger.put("res", resolution);
+                                    finger.put("height", m_bitmap.getHeight());
+                                    finger.put("width", m_bitmap.getWidth());
+
                                     //  finger.put("image", imageBase64);
                                     ObjectMapper objectMapper = new ObjectMapper();
 
                                     String absolutePath = String.format("%s%s", dir, base);
 
                                     String jsonOutputString;
+
                                     try (FileOutputStream writer = new FileOutputStream(absolutePath)) {
                                         jsonOutputString = objectMapper.writeValueAsString(finger);
                                         writer.write(jsonOutputString.getBytes());
@@ -167,18 +166,6 @@ public class EnrollmentActivity extends Activity {
                                     e.printStackTrace();
                                     new Utils().log("Image save failed");
                                 }
-
-                                // save finger.txt
-                                String txt = "finger.txt";
-                                String path = String.format("%s%s", dir, txt);
-                                try (FileOutputStream fos = new FileOutputStream(path)) {
-                                    fos.write(imageBase64.getBytes(Charset.defaultCharset()));
-                                    fos.flush();
-                                    fos.close();
-                                } catch (Exception e) {
-
-                                }
-
 
                                 // save finger.png
                                 String image = "finger.png";
@@ -195,6 +182,43 @@ public class EnrollmentActivity extends Activity {
                                     fos.flush();
                                     fos.close();
                                 } catch (IOException e) {
+                                    e.printStackTrace();
+                                }
+
+                                // save finger.txt
+                                String txt = "finger.txt";
+                                String path = String.format("%s%s", dir, txt);
+
+                                try (FileOutputStream fos = new FileOutputStream(path)) {
+                                    File myFolder = new File(dir);
+                                    if (!myFolder.exists()) {
+                                        myFolder.mkdirs();
+                                    }
+
+                                    fos.write(imageBase64.getBytes(Charset.defaultCharset()));
+                                    fos.flush();
+                                } catch (Exception e) {
+                                    e.printStackTrace();
+                                }
+
+                                // save finger.
+                                String fName = "data.txt";
+                                String fPath = String.format("%s%s", dir, fName);
+                                MyFMD myFmd = (MyFMD) m_enrollment_fmd;
+
+                                new Utils().log("myFMD check: cbe -> %d, res -> %d", myFmd.getCbeffId(), myFmd.getResolution());
+
+                                try (FileOutputStream fileOut = new FileOutputStream(fPath)) {
+                                    // Creates an ObjectOutputStream
+                                    ObjectOutputStream objOut = new ObjectOutputStream(fileOut);
+
+                                    // Writes objects to the output stream
+                                    objOut.writeObject(myFmd);
+
+                                    new Utils().log("myFMD write: ", true);
+
+                                    objOut.close();
+                                } catch (Exception e) {
                                     e.printStackTrace();
                                 }
 
@@ -269,7 +293,7 @@ public class EnrollmentActivity extends Activity {
             PreEnrollmentFmd result = null;
             while (!m_reset) {
                 try {
-                    cap_result = m_reader.Capture(Fid.Format.ANSI_381_2004, Globals.DefaultImageProcessing, m_DPI, -1);
+                    cap_result = m_reader.Capture(Fid.Format.ISO_19794_4_2005, Globals.DefaultImageProcessing, m_DPI, -1);
                 } catch (Exception e) {
                     Log.w("UareUSampleJava", "error during capture: " + e.toString());
                     m_deviceName = "";
@@ -284,7 +308,7 @@ public class EnrollmentActivity extends Activity {
                     // save bitmap image locally
                     m_bitmap = Globals.GetBitmapFromRaw(cap_result.image.getViews()[0].getImageData(), cap_result.image.getViews()[0].getWidth(), cap_result.image.getViews()[0].getHeight());
                     PreEnrollmentFmd prefmd = new Engine.PreEnrollmentFmd();
-                    prefmd.fmd = m_engine.CreateFmd(cap_result.image, Fmd.Format.ANSI_378_2004);
+                    prefmd.fmd = m_engine.CreateFmd(cap_result.image, Format.ISO_19794_2_2005);
                     prefmd.view_index = 0;
                     m_current_fmds_count++;
 

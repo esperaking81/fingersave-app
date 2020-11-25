@@ -1,13 +1,10 @@
 package com.digitalpersona.uareu.UareUSampleJava;
 
-import android.annotation.SuppressLint;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.drawable.Drawable;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Environment;
 import android.support.v7.app.AppCompatActivity;
-import android.util.Base64;
 import android.widget.ImageView;
 import android.widget.TextView;
 
@@ -15,21 +12,18 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.BufferedInputStream;
-import java.io.BufferedReader;
 import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.util.HashMap;
 
 public class ShowActivity extends AppCompatActivity {
     TextView cbe, res, base;
     ImageView imageView;
-    String imageInBase64 = Globals.base64;
+    String imageInBase64;
     Utils utils = new Utils();
 
-    @SuppressLint("WrongThread")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -47,18 +41,17 @@ public class ShowActivity extends AppCompatActivity {
         String absolutePath = dir + File.separator + fileName;
         String jsonInputString = "";
 
-/*        try (FileInputStream is = new FileInputStream(new File(absolutePath))) {
-            BufferedReader r = new BufferedReader(new InputStreamReader(is));
+        File mFile = new File(dir, "finger" + ".txt");
+        byte[] mBytes = new byte[(int) mFile.length()];
+        try (FileInputStream fis = new FileInputStream(mFile)) {
+            fis.read(mBytes);
+            String base64 = new String(mBytes);
+            imageInBase64 = base64;
+            base.setText(base64);
 
-            String line;
-            while ((line = r.readLine()) != null) {
-                if (line.length() > 0) jsonInputString.append(line);
-            }
-            r.close();
         } catch (IOException e) {
             e.printStackTrace();
-            utils.log("File reading failed !");
-        }*/
+        }
 
         File file = new File(absolutePath);
         byte[] bytes = new byte[(int) file.length()];
@@ -74,29 +67,70 @@ public class ShowActivity extends AppCompatActivity {
 
         String directory = Environment.getExternalStorageDirectory().getAbsolutePath() + File.separator + "UareU";
         File imageFile = new File(directory, "finger" + ".png");
+        // runOnUiThread(() -> imageView.setImageDrawable(Drawable.createFromPath(imageFile.toString())));
         imageView.setImageDrawable(Drawable.createFromPath(imageFile.toString()));
 
         try {
             HashMap<String, Object> finger = new ObjectMapper().readValue(jsonInputString, HashMap.class);
-            cbe.setText((String) finger.get("cbe"));
-            res.setText((String) finger.get("res"));
+            // runOnUiThread(() -> cbe.setText(finger.get("cbe").toString()));
+            cbe.setText(finger.get("cbe").toString());
+            // runOnUiThread(() -> res.setText(finger.get("res").toString()));
+            res.setText(finger.get("res").toString());
 
         } catch (JsonProcessingException e) {
             e.printStackTrace();
         }
+    }
 
-        String base64 = "";
-        File mFile = new File(dir, "finger" + ".txt");
-        byte[] mBytes = new byte[(int) mFile.length()];
-        try (BufferedInputStream bis = new BufferedInputStream(new FileInputStream(file))) {
-            DataInputStream dis = new DataInputStream(bis);
-            dis.readFully(mBytes);
-            base64 = new String(bytes);
-        } catch (IOException e) {
-            e.printStackTrace();
+    private class MyTask extends AsyncTask<String, Void, String> {
+
+        @Override
+        protected String doInBackground(String... params) {
+            String extDir = Environment.getExternalStorageDirectory().getAbsolutePath();
+            String dir = String.format("%s/UareU/", extDir);
+
+            File mFile = new File(dir, "finger" + ".txt");
+            byte[] mBytes = new byte[(int) mFile.length()];
+            try (FileInputStream fis = new FileInputStream(mFile)) {
+                fis.read(mBytes);
+                String base64 = new String(mBytes);
+                imageInBase64 = base64;
+                base.setText(base64);
+
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+            return imageInBase64;
         }
 
-        base.setText(base64);
+        @Override
+        protected void onPostExecute(String result) {
+            super.onPostExecute(result);
+            utils.log("BASE64: ", result);
+        }
+    }
+}
+
+
+
+
+
+
+
+
+        /*        try (FileInputStream is = new FileInputStream(new File(absolutePath))) {
+            BufferedReader r = new BufferedReader(new InputStreamReader(is));
+
+            String line;
+            while ((line = r.readLine()) != null) {
+                if (line.length() > 0) jsonInputString.append(line);
+            }
+            r.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+            utils.log("File reading failed !");
+        }*/
 
 //        try {
 //            byte[] decompressedBArray = Base64.decode(imageInBase64, Base64.DEFAULT);
@@ -114,5 +148,3 @@ public class ShowActivity extends AppCompatActivity {
 //        } catch (Exception e) {
 //            e.printStackTrace();
 //        }
-    }
-}
