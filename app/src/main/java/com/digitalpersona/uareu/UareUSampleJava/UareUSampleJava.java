@@ -127,6 +127,12 @@ public class UareUSampleJava extends Activity {
             Intent i = new Intent(UareUSampleJava.this, VerifyActivity.class);
             startActivity(i);
         });
+
+        findViewById(R.id.save).setOnClickListener(v -> {
+            Intent i = new Intent(UareUSampleJava.this, SaveActivity.class);
+            i.putExtra("device_name", m_deviceName);
+            startActivity(i);
+        });
     }
 
     protected void launchGetReader() {

@@ -17,7 +17,6 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.util.Base64;
 import android.util.Log;
-import android.view.View;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.TextView;
@@ -40,6 +39,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.text.DecimalFormat;
+import java.util.Arrays;
 import java.util.HashMap;
 
 public class VerificationActivity extends Activity {
@@ -96,28 +96,86 @@ public class VerificationActivity extends Activity {
 
     private void newFMD() {
         String extDir = Environment.getExternalStorageDirectory().getAbsolutePath();
-        String dir = String.format("%s/UareU/", extDir);
+        String dir = String.format("%s/db/", extDir);
         String fName = "data.txt";
         String fPath = String.format("%s%s", dir, fName);
 
-        try (FileInputStream fis = new FileInputStream(fPath)) {
-            ObjectInputStream ois = new ObjectInputStream(fis);
+        try (BufferedInputStream fis = new BufferedInputStream(new FileInputStream(fPath))) {
 
-            m_fmd = (MyFMD) ois.readObject();
+            // MyFmd myFmd = (MyFmd) ois.readObject();
+            // new Utils().log("m_fmd read data length: ", myFmd.getM_data().length);
+            // new Utils().log("m_fmd read width: ", myFmd.width);
+            // new Utils().log("m_fmd read height: ", myFmd.height);
+            // new Utils().log("m_fmd read resolution: ", myFmd.resolution);
+            // new Utils().log("m_fmd read cbeffid: ", myFmd.cbeffid);
+            // new Utils().log("m_fmd read cbeffid: ", myFmd.getM_format());
+
+
+            // m_fmd = m_engine.CreateFmd(myFmd.getM_data(), myFmd.getWidth(), myFmd.getHeight(), myFmd.getResolution(), 0, myFmd.getCbeffid(), myFmd.getM_format());
 
             Boolean success = m_fmd != null;
 
             new Utils().log("m_fmd read: ", success);
 
-            ois.close();
-        } catch (IOException | ClassNotFoundException e) {
+            // ois.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void read() {
+        String extDir = Environment.getExternalStorageDirectory().getAbsolutePath();
+        String dir = String.format("%s/db/", extDir);
+        String fPath = dir + "byte.txt";
+        String jsonInputString = "";
+        String fileName = "finger.json";
+        String absolutePath = dir + File.separator + fileName;
+        File file = new File(absolutePath);
+        byte[] bytes = new byte[(int) file.length()];
+        try (BufferedInputStream bis = new BufferedInputStream(new FileInputStream(file))) {
+            DataInputStream dis = new DataInputStream(bis);
+            dis.readFully(bytes);
+            jsonInputString = new String(bytes);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        new Utils().log("JSON: %s", jsonInputString);
+
+        File mFile = new File(fPath);
+        byte[] mBytes = new byte[(int) mFile.length()];
+        try (FileInputStream fis = new FileInputStream(mFile)) {
+            fis.read(mBytes);
+            String base64 = new String(mBytes);
+            new Utils().log(String.format("In base64 was : %s", base64));
+
+            byte[] decodedB64 = Base64.decode(base64, 0);
+            new Utils().log("Byte[] length is: %d", decodedB64.length);
+
+            HashMap finger = new ObjectMapper().readValue(jsonInputString, HashMap.class);
+            // runOnUiThread(() -> cbe.setText(finger.get("cbe").toString()));
+            // cbe.setText(finger.get("cbe").toString());
+            // runOnUiThread(() -> res.setText(finger.get("res").toString()));
+            // res.setText(finger.get("res").toString());
+
+            int cbe = (int) finger.get("cbe");
+            int width = (int) finger.get("width");
+            int height = (int) finger.get("height");
+            int res = (int) finger.get("res");
+
+            m_fmd = m_engine.CreateFmd(decodedB64, width, height, res, 0, cbe, Fmd.Format.ANSI_378_2004);
+
+            new Utils().log("m_fmd data is: " + Arrays.toString(decodedB64));
+
+            Arrays.toString(decodedB64);
+        } catch (IOException | UareUException e) {
             e.printStackTrace();
         }
     }
 
     private void getFmd() {
         String extDir = Environment.getExternalStorageDirectory().getAbsolutePath();
-        String dir = String.format("%s/UareU/", extDir);
+        String dir = String.format("%s/db/", extDir);
 
         File mFile = new File(dir, "finger" + ".txt");
         byte[] mBytes = new byte[(int) mFile.length()];
@@ -167,7 +225,7 @@ public class VerificationActivity extends Activity {
             utils.log("cbe: %d, width: %d, height: %d, res: %d", cbe, width, height, resolution);
             utils.log("BASE64: ", m_base64);
 
-            m_fmd = m_engine.CreateFmd(imageInBytes, width, height, resolution, 0, cbe, Fmd.Format.ISO_19794_2_2005);
+            m_fmd = m_engine.CreateFmd(imageInBytes, width, height, resolution, 0, cbe, Fmd.Format.ANSI_378_2004);
 
             if (m_fmd.getData() != null) {
                 if (m_fmd.getData() == imageInBytes) {
@@ -210,12 +268,12 @@ public class VerificationActivity extends Activity {
 
         // loop capture on a separate thread to avoid freezing the UI
         new Thread(() -> {
-            newFMD();
+            read();
 
             m_reset = false;
             while (!m_reset) {
                 try {
-                    cap_result = m_reader.Capture(Fid.Format.ISO_19794_4_2005, Globals.DefaultImageProcessing, m_DPI, -1);
+                    cap_result = m_reader.Capture(Fid.Format.ANSI_381_2004, Globals.DefaultImageProcessing, m_DPI, -1);
                 } catch (Exception e) {
                     if (!m_reset) {
                         Log.w("UareUSampleJava", "error during capture: " + e.toString());
@@ -236,9 +294,9 @@ public class VerificationActivity extends Activity {
                     m_bitmap = Globals.GetBitmapFromRaw(cap_result.image.getViews()[0].getImageData(), cap_result.image.getViews()[0].getWidth(), cap_result.image.getViews()[0].getHeight());
 
                     if (m_fmd == null) {
-                        m_fmd = m_engine.CreateFmd(cap_result.image, Fmd.Format.ISO_19794_2_2005);
+                        m_fmd = m_engine.CreateFmd(cap_result.image, Fmd.Format.ANSI_378_2004);
                     } else {
-                        m_score = m_engine.Compare(m_fmd, 0, m_engine.CreateFmd(cap_result.image, Fmd.Format.ISO_19794_2_2005), 0);
+                        m_score = m_engine.Compare(m_fmd, 0, m_engine.CreateFmd(cap_result.image, Fmd.Format.ANSI_378_2004), 0);
                         m_fmd = null;
                         m_resultAvailableToDisplay = true;
                     }

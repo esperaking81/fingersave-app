@@ -7,17 +7,8 @@
 
 package com.digitalpersona.uareu.UareUSampleJava;
 
-import com.digitalpersona.uareu.Engine;
-import com.digitalpersona.uareu.Engine.PreEnrollmentFmd;
-import com.digitalpersona.uareu.Fid;
-import com.digitalpersona.uareu.Fmd;
-import com.digitalpersona.uareu.Fmd.Format;
-import com.digitalpersona.uareu.Reader;
-import com.digitalpersona.uareu.Reader.Priority;
-import com.digitalpersona.uareu.UareUGlobal;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
@@ -29,14 +20,23 @@ import android.util.Log;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.TextView;
-import android.content.Context;
+
+import com.digitalpersona.uareu.Engine;
+import com.digitalpersona.uareu.Engine.PreEnrollmentFmd;
+import com.digitalpersona.uareu.Fid;
+import com.digitalpersona.uareu.Fmd;
+import com.digitalpersona.uareu.Fmd.Format;
+import com.digitalpersona.uareu.Reader;
+import com.digitalpersona.uareu.Reader.Priority;
+import com.digitalpersona.uareu.UareUGlobal;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.ObjectOutputStream;
 import java.nio.charset.Charset;
+import java.util.Arrays;
 import java.util.HashMap;
 
 public class EnrollmentActivity extends Activity {
@@ -99,7 +99,7 @@ public class EnrollmentActivity extends Activity {
         m_textString = "Place any finger on the reader";
         initializeActivity();
 
-        // initiliaze dp sdk
+        // initialize dp sdk
         try {
             Context applContext = getApplicationContext();
             m_reader = Globals.getInstance().getReader(m_deviceName, applContext);
@@ -114,130 +114,122 @@ public class EnrollmentActivity extends Activity {
         }
 
         // loop capture on a separate thread to avoid freezing the UI
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    m_current_fmds_count = 0;
-                    m_reset = false;
-                    enrollThread = new EnrollmentCallback(m_reader, m_engine);
-                    while (!m_reset) {
-                        try {
-                            m_enrollment_fmd = m_engine.CreateEnrollmentFmd(Format.ISO_19794_2_2005, enrollThread);
-                            if (m_success = (m_enrollment_fmd != null)) {
-                                m_templateSize = m_enrollment_fmd.getData().length;
-                                m_current_fmds_count = 0;    // reset count on success
+        new Thread(() -> {
+            try {
+                m_current_fmds_count = 0;
+                m_reset = false;
+                enrollThread = new EnrollmentCallback(m_reader, m_engine);
+                while (!m_reset) {
+                    try {
+                        m_enrollment_fmd = m_engine.CreateEnrollmentFmd(Format.ANSI_378_2004, enrollThread);
+                        if (m_success = (m_enrollment_fmd != null)) {
+                            m_templateSize = m_enrollment_fmd.getData().length;
+                            m_current_fmds_count = 0;    // reset count on success
 
+                            new Utils().log("m_fmd data is: " + Arrays.toString(m_enrollment_fmd.getData()));
 
-                                // added ------------------
-                                String extDir = Environment.getExternalStorageDirectory().getAbsolutePath();
-                                String dir = String.format("%s/UareU/", extDir);
-                                Globals.setBase(imageBase64);
+                            // added ------------------
+                            String extDir = Environment.getExternalStorageDirectory().getAbsolutePath();
+                            String dir = String.format("%s/db/", extDir);
+                            Globals.setBase(imageBase64);
 
-                                // save data.txt
-                                String base = "finger.json";
-                                try {
-                                    File myFolder = new File(dir);
-                                    if (!myFolder.exists()) {
-                                        myFolder.mkdirs();
-                                    }
-
-                                    HashMap<String, Object> finger = new HashMap<>();
-                                    finger.put("cbe", cbe);
-                                    finger.put("res", resolution);
-                                    finger.put("height", m_bitmap.getHeight());
-                                    finger.put("width", m_bitmap.getWidth());
-
-                                    //  finger.put("image", imageBase64);
-                                    ObjectMapper objectMapper = new ObjectMapper();
-
-                                    String absolutePath = String.format("%s%s", dir, base);
-
-                                    String jsonOutputString;
-
-                                    try (FileOutputStream writer = new FileOutputStream(absolutePath)) {
-                                        jsonOutputString = objectMapper.writeValueAsString(finger);
-                                        writer.write(jsonOutputString.getBytes());
-                                    } catch (IOException e) {
-                                        e.printStackTrace();
-                                        new Utils().log("Image save failed");
-                                    }
-                                } catch (Exception e) {
-                                    e.printStackTrace();
-                                    new Utils().log("Image save failed");
+                            // save data.txt
+                            String base = "finger.json";
+                            try {
+                                File myFolder = new File(dir);
+                                if (!myFolder.exists()) {
+                                    myFolder.mkdirs();
                                 }
 
-                                // save finger.png
-                                String image = "finger.png";
-                                String absPath = String.format("%s%s", dir, image);
+                                HashMap<String, Object> finger = new HashMap<>();
+                                finger.put("cbe", cbe);
+                                finger.put("res", resolution);
+                                finger.put("height", m_bitmap.getHeight());
+                                finger.put("width", m_bitmap.getWidth());
 
-                                try {
-                                    File myFolder = new File(dir);
-                                    if (!myFolder.exists()) {
-                                        myFolder.mkdirs();
-                                    }
+                                //  finger.put("image", imageBase64);
+                                ObjectMapper objectMapper = new ObjectMapper();
 
-                                    FileOutputStream fos = new FileOutputStream(absPath);
-                                    m_bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos);
-                                    fos.flush();
-                                    fos.close();
+                                String absolutePath = String.format("%s%s", dir, base);
+
+                                String jsonOutputString;
+
+                                try (FileOutputStream writer = new FileOutputStream(absolutePath)) {
+                                    jsonOutputString = objectMapper.writeValueAsString(finger);
+                                    writer.write(jsonOutputString.getBytes());
                                 } catch (IOException e) {
-                                    e.printStackTrace();
+                                    new Utils().log("Image save failed: ", e.getMessage());
                                 }
-
-                                // save finger.txt
-                                String txt = "finger.txt";
-                                String path = String.format("%s%s", dir, txt);
-
-                                try (FileOutputStream fos = new FileOutputStream(path)) {
-                                    File myFolder = new File(dir);
-                                    if (!myFolder.exists()) {
-                                        myFolder.mkdirs();
-                                    }
-
-                                    fos.write(imageBase64.getBytes(Charset.defaultCharset()));
-                                    fos.flush();
-                                } catch (Exception e) {
-                                    e.printStackTrace();
-                                }
-
-                                // save finger.
-                                String fName = "data.txt";
-                                String fPath = String.format("%s%s", dir, fName);
-                                MyFMD myFmd = (MyFMD) m_enrollment_fmd;
-
-                                new Utils().log("myFMD check: cbe -> %d, res -> %d", myFmd.getCbeffId(), myFmd.getResolution());
-
-                                try (FileOutputStream fileOut = new FileOutputStream(fPath)) {
-                                    // Creates an ObjectOutputStream
-                                    ObjectOutputStream objOut = new ObjectOutputStream(fileOut);
-
-                                    // Writes objects to the output stream
-                                    objOut.writeObject(myFmd);
-
-                                    new Utils().log("myFMD write: ", true);
-
-                                    objOut.close();
-                                } catch (Exception e) {
-                                    e.printStackTrace();
-                                }
-
-                                // end added -------------------
+                            } catch (Exception e) {
+                                new Utils().log("Image save failed: ", e.getMessage());
                             }
-                        } catch (Exception e) {
-                            // template creation failed, reset count
-                            m_current_fmds_count = 0;
+
+                            // save finger.png
+                            String image = "finger.png";
+                            String absPath = String.format("%s%s", dir, image);
+
+                            try {
+                                File myFolder = new File(dir);
+                                if (!myFolder.exists()) {
+                                    myFolder.mkdirs();
+                                }
+
+                                FileOutputStream fos = new FileOutputStream(absPath);
+                                m_bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos);
+                                fos.flush();
+                                fos.close();
+                            } catch (IOException e) {
+                                new Utils().log("finger.png save error: ", e.getMessage());
+                            }
+
+                            // save finger.txt
+                            String txt = "finger.txt";
+                            String path = String.format("%s%s", dir, txt);
+
+                            try (FileOutputStream fos = new FileOutputStream(path)) {
+                                File myFolder = new File(dir);
+                                if (!myFolder.exists()) {
+                                    myFolder.mkdirs();
+                                }
+
+                                fos.write(imageBase64.getBytes(Charset.defaultCharset()));
+                                fos.flush();
+                            } catch (Exception e) {
+                                new Utils().log("finger.txt save error: ", e.getMessage());
+                            }
+
+                            // save data.txt
+                            String fName = "byte.txt";
+                            String fPath = String.format("%s%s", dir, fName);
+                            fileWriting(fPath);
+
+                            // end added -------------------
                         }
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                        // template creation failed, reset count
+                        m_current_fmds_count = 0;
                     }
-                } catch (Exception e) {
-                    if (!m_reset) {
-                        Log.w("UareUSampleJava", "error during capture");
-                        m_deviceName = "";
-                        onBackPressed();
-                    }
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+
+                if (!m_reset) {
+                    Log.w("UareUSampleJava", "error during capture");
+                    m_deviceName = "";
+                    onBackPressed();
                 }
             }
         }).start();
+    }
+
+    private void fileWriting(String fPath) {
+        try (FileOutputStream writer = new FileOutputStream(fPath)) {
+            String textBase64 = Base64.encodeToString(cap_result.image.getViews()[0].getImageData(), Base64.DEFAULT);
+            writer.write(textBase64.getBytes());
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     public void UpdateGUI() {
@@ -293,7 +285,7 @@ public class EnrollmentActivity extends Activity {
             PreEnrollmentFmd result = null;
             while (!m_reset) {
                 try {
-                    cap_result = m_reader.Capture(Fid.Format.ISO_19794_4_2005, Globals.DefaultImageProcessing, m_DPI, -1);
+                    cap_result = m_reader.Capture(Fid.Format.ANSI_381_2004, Globals.DefaultImageProcessing, m_DPI, -1);
                 } catch (Exception e) {
                     Log.w("UareUSampleJava", "error during capture: " + e.toString());
                     m_deviceName = "";
@@ -308,7 +300,7 @@ public class EnrollmentActivity extends Activity {
                     // save bitmap image locally
                     m_bitmap = Globals.GetBitmapFromRaw(cap_result.image.getViews()[0].getImageData(), cap_result.image.getViews()[0].getWidth(), cap_result.image.getViews()[0].getHeight());
                     PreEnrollmentFmd prefmd = new Engine.PreEnrollmentFmd();
-                    prefmd.fmd = m_engine.CreateFmd(cap_result.image, Format.ISO_19794_2_2005);
+                    prefmd.fmd = m_engine.CreateFmd(cap_result.image, Format.ANSI_378_2004);
                     prefmd.view_index = 0;
                     m_current_fmds_count++;
 

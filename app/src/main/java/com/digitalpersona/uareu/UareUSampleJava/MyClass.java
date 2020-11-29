@@ -3,7 +3,11 @@ package com.digitalpersona.uareu.UareUSampleJava;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.ObjectOutputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
@@ -73,6 +77,18 @@ public class MyClass {
     }
 
     public static void main(String[] args) {
-        launch();
+        String dir = System.getProperty("user.home");
+        String fName = "data.txt";
+        String absPath = dir + File.separator + fName;
+        try (FileOutputStream fous = new FileOutputStream(absPath)) {
+            ObjectOutputStream ous = new ObjectOutputStream(fous);
+            Person person = new Person("AWO", "ESPERA");
+
+            ous.writeObject(person);
+            ous.flush();
+            ous.close();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 }
